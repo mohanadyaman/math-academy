@@ -1,122 +1,141 @@
 'use client';
-import { useEffect, useState } from 'react';
+
+import Link from 'next/link';
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
+import { useAuth } from '@/context/AuthContext';
 import { db } from '@/lib/firebase';
-import { collection, query, orderBy, getDocs, doc, updateDoc, deleteDoc } from 'firebase/firestore';
-import AdminSidebar from '@/components/AdminSidebar';
 
-export default function AdminMessages() {
-  const [messages, setMessages] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+export default function Contact() {
+  const { user } = useAuth();
+  const router = useRouter();
+  const [subject, setSubject] = useState('');
+  const [message, setMessage] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const [error, setError] = useState('');
 
-  // جلب الرسائل من قاعدة البيانات
-  useEffect(() => {
-    const fetchMessages = async () => {
-      try {
-        const q = query(collection(db, 'messages'), orderBy('createdAt', 'desc'));
-        const snapshot = await getDocs(q);
-        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        setMessages(data);
-      } catch (error) {
-        console.error("خطأ في جلب الرسائل:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchMessages();
-  }, []);
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
 
-  // تحويل حالة الرسالة إلى "مقروءة"
-  const markAsRead = async (id: string) => {
-    try {
-      await updateDoc(doc(db, 'messages', id), { status: 'read' });
-      setMessages(messages.map(msg => msg.id === id ? { ...msg, status: 'read' } : msg));
-    } catch (error) {
-      console.error("خطأ في تحديث الحالة:", error);
+    const trimmedSubject = subject.trim();
+    const trimmedMessage = message.trim();
+
+    if (!trimmedSubject || !trimmedMessage) {
+      setError('يرجى كتابة عنوان الرسالة وتفاصيلها.');
+      return;
     }
-  };
 
-  // حذف الرسالة
-  const deleteMessage = async (id: string) => {
-    if (!confirm('هل أنت متأكد من حذف هذه الرسالة نهائياً؟')) return;
     try {
-      await deleteDoc(doc(db, 'messages', id));
-      setMessages(messages.filter(msg => msg.id !== id));
-    } catch (error) {
-      console.error("خطأ في حذف الرسالة:", error);
-    }
-  };
+      setLoading(true);
+      setError('');
 
-  if (loading) return <div className="min-h-screen flex items-center justify-center font-bold text-slate-500">جاري تحميل الرسائل... ⏳</div>;
+      await addDoc(collection(db, 'messages'), {
+        studentId: user?.uid ?? null,
+        name: user?.displayName ?? 'زائر',
+        email: user?.email ?? null,
+        subject: trimmedSubject,
+        message: trimmedMessage,
+        status: 'unread',
+        createdAt: serverTimestamp(),
+      });
+
+      setSubject('');
+      setMessage('');
+      setSuccess(true);
+    } catch (submitError) {
+      console.error('تعذر إرسال الرسالة:', submitError);
+      setError('تعذر إرسال الرسالة الآن. يرجى المحاولة مرة أخرى.');
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
-    <div className="flex min-h-screen bg-slate-50" dir="rtl">
-      <AdminSidebar />
-      
-      <main className="flex-1 p-6 md:p-10 overflow-y-auto">
-        <div className="flex justify-between items-end mb-8">
-          <div>
-            <h1 className="text-3xl font-black text-slate-800 mb-2">صندوق الوارد 📩</h1>
-            <p className="text-gray-500">استفسارات ورسائل الطلاب والزوار من صفحة التواصل.</p>
-          </div>
-          <div className="bg-white px-4 py-2 rounded-xl shadow-sm border border-gray-100 font-bold text-slate-700">
-            إجمالي الرسائل: <span className="text-red-600">{messages.length}</span>
-          </div>
+    <main className="min-h-screen bg-slate-50 px-4 py-12" dir="rtl">
+      <div className="mx-auto w-full max-w-xl overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-xl">
+        <div className="relative overflow-hidden bg-slate-900 p-8 text-center">
+          <div className="absolute right-0 top-0 h-32 w-32 rounded-full bg-red-600 opacity-40 blur-[60px]" />
+          <h1 className="relative text-2xl font-black text-white">تواصل مع المعلم 📞</h1>
+          <p className="relative mt-2 text-sm text-slate-300">
+            اترك استفسارك وسنتواصل معك في أقرب وقت.
+          </p>
         </div>
 
-        {messages.length === 0 ? (
-          <div className="bg-white p-12 rounded-3xl border border-gray-100 text-center shadow-sm">
-            <div className="text-6xl mb-4">📭</div>
-            <h2 className="text-2xl font-bold text-slate-800 mb-2">صندوق الوارد فارغ</h2>
-            <p className="text-gray-500">لا توجد رسائل جديدة في الوقت الحالي.</p>
-          </div>
-        ) : (
-          <div className="grid gap-6">
-            {messages.map((msg) => (
-              <div 
-                key={msg.id} 
-                className={`bg-white rounded-2xl p-6 shadow-sm border-l-4 transition-all duration-300 ${
-                  msg.status === 'unread' ? 'border-l-red-500 shadow-md' : 'border-l-gray-300 opacity-80'
-                }`}
-              >
-                <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-4">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-2">
-                      <h3 className="font-bold text-xl text-slate-800">{msg.subject}</h3>
-                      {msg.status === 'unread' && (
-                        <span className="bg-red-100 text-red-600 text-xs font-bold px-2 py-1 rounded-md">جديدة</span>
-                      )}
-                    </div>
-                    <div className="text-sm text-gray-500 mb-4 flex gap-4">
-                      <span>👤 {msg.name}</span>
-                      <span>✉️ {msg.email}</span>
-                    </div>
-                    <p className="text-slate-700 bg-slate-50 p-4 rounded-xl border border-slate-100 leading-relaxed">
-                      {msg.message}
-                    </p>
-                  </div>
-                  
-                  <div className="flex md:flex-col gap-2 min-w-[120px]">
-                    {msg.status === 'unread' && (
-                      <button 
-                        onClick={() => markAsRead(msg.id)}
-                        className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2 px-4 rounded-lg transition text-sm flex items-center justify-center gap-2"
-                      >
-                        <span>👁️</span> تحديد كمقروءة
-                      </button>
-                    )}
-                    <button 
-                      onClick={() => deleteMessage(msg.id)}
-                      className="flex-1 bg-red-50 hover:bg-red-100 text-red-600 font-bold py-2 px-4 rounded-lg transition text-sm flex items-center justify-center gap-2 border border-red-100"
-                    >
-                      <span>🗑️</span> حذف
-                    </button>
-                  </div>
-                </div>
+        <div className="p-6 sm:p-8">
+          {success ? (
+            <div className="py-8 text-center">
+              <div className="mb-4 text-6xl">✅</div>
+              <h2 className="text-xl font-bold text-slate-800">تم إرسال رسالتك بنجاح</h2>
+              <p className="mt-2 text-slate-500">شكرًا لتواصلك معنا. سنرد عليك في أقرب وقت.</p>
+              <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-center">
+                <button
+                  type="button"
+                  onClick={() => setSuccess(false)}
+                  className="rounded-xl bg-slate-100 px-5 py-3 font-bold text-slate-800 transition hover:bg-slate-200"
+                >
+                  إرسال رسالة أخرى
+                </button>
+                <button
+                  type="button"
+                  onClick={() => router.push(user ? '/dashboard' : '/')}
+                  className="rounded-xl bg-red-600 px-5 py-3 font-bold text-white transition hover:bg-red-700"
+                >
+                  العودة
+                </button>
               </div>
-            ))}
-          </div>
-        )}
-      </main>
-    </div>
+            </div>
+          ) : (
+            <form onSubmit={handleSubmit} className="space-y-5">
+              {!user && (
+                <div className="rounded-xl border border-amber-100 bg-amber-50 p-4 text-sm font-medium text-amber-800">
+                  يمكنك إرسال الرسالة كزائر، لكن <Link href="/login" className="font-bold underline">تسجيل الدخول</Link> يسهل علينا الرد عليك.
+                </div>
+              )}
+
+              {error && (
+                <div role="alert" className="rounded-xl border border-red-100 bg-red-50 p-3 text-sm font-medium text-red-700">
+                  {error}
+                </div>
+              )}
+
+              <div>
+                <label htmlFor="subject" className="mb-2 block text-sm font-bold text-slate-700">عنوان الرسالة</label>
+                <input
+                  id="subject"
+                  value={subject}
+                  onChange={(event) => setSubject(event.target.value)}
+                  maxLength={120}
+                  placeholder="مثال: مشكلة في تفعيل الكورس"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none transition focus:border-red-500 focus:bg-white focus:ring-2 focus:ring-red-100"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="message" className="mb-2 block text-sm font-bold text-slate-700">تفاصيل الرسالة</label>
+                <textarea
+                  id="message"
+                  value={message}
+                  onChange={(event) => setMessage(event.target.value)}
+                  maxLength={2000}
+                  rows={6}
+                  placeholder="اكتب استفسارك بالتفصيل هنا..."
+                  className="w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none transition focus:border-red-500 focus:bg-white focus:ring-2 focus:ring-red-100"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full rounded-xl bg-red-600 py-4 text-lg font-bold text-white shadow-lg shadow-red-600/20 transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {loading ? 'جاري الإرسال...' : 'إرسال الرسالة 🚀'}
+              </button>
+            </form>
+          )}
+        </div>
+      </div>
+    </main>
   );
 }
